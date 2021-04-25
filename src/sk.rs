@@ -1,5 +1,5 @@
 use std::f32::consts::PI;
-use std::ffi::CString;
+use std::ffi::{CString, NulError};
 use std::ops::{Deref, DerefMut};
 use std::os::raw::c_char;
 use std::ptr;
@@ -10,6 +10,8 @@ use crate::error::SkError;
 use crate::image::ImageData;
 
 mod ffi {
+  use std::os::raw::c_char;
+
   use super::SkiaString;
 
   #[repr(C)]
@@ -87,6 +89,12 @@ mod ffi {
   #[repr(C)]
   #[derive(Copy, Clone, Debug)]
   pub struct skiac_sk_string {
+    _unused: [u8; 0],
+  }
+
+  #[repr(C)]
+  #[derive(Copy, Clone, Debug)]
+  pub struct skiac_typeface {
     _unused: [u8; 0],
   }
 
@@ -243,12 +251,12 @@ mod ffi {
 
     pub fn skiac_canvas_draw_text(
       canvas: *mut skiac_canvas,
-      text: *const ::std::os::raw::c_char,
+      text: *const c_char,
+      len: usize,
+      size: f32,
       x: f32,
       y: f32,
-      font_size: f32,
-      font_family: *const ::std::os::raw::c_char,
-      align: u8,
+      typeface: *mut skiac_typeface,
       paint: *mut skiac_paint,
     );
 
@@ -539,6 +547,16 @@ mod ffi {
 
     // SkString
     pub fn skiac_delete_sk_string(c_sk_string: *mut skiac_sk_string);
+
+    // SkTypeface
+    pub fn skiac_typeface_create(
+      font_family: *const c_char,
+      width: i32,
+      height: i32,
+      slant: i32,
+    ) -> *mut skiac_typeface;
+
+    pub fn skiac_typeface_destroy(typeface: *mut skiac_typeface);
   }
 }
 
@@ -1062,6 +1080,44 @@ impl ToString for TextBaseline {
   }
 }
 
+#[repr(i32)]
+#[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
+pub enum FontSlant {
+  Upright,
+  Italic,
+  Oblique,
+}
+
+#[repr(i32)]
+#[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
+pub enum FontWeight {
+  Invisible = 0,
+  Thin = 100,
+  ExtraLight = 200,
+  Light = 300,
+  Normal = 400,
+  Medium = 500,
+  SemiBold = 600,
+  Bold = 700,
+  ExtraBold = 800,
+  Black = 900,
+  ExtraBlack = 1000,
+}
+
+#[repr(i32)]
+#[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
+pub enum FontWidth {
+  UltraCondensed = 1,
+  ExtraCondensed = 2,
+  Condensed = 3,
+  SemiCondensed = 4,
+  Normal = 5,
+  SemiExpanded = 6,
+  Expanded = 7,
+  ExtraExpanded = 8,
+  UltraExpanded = 9,
+}
+
 pub struct Surface {
   ptr: *mut ffi::skiac_surface,
   pub(crate) canvas: Canvas,
@@ -1433,27 +1489,27 @@ impl Canvas {
   pub fn draw_text(
     &mut self,
     text: &str,
+    len: usize,
+    size: f32,
     x: f32,
     y: f32,
-    font_size: f32,
-    font_family: &str,
-    align: u8,
+    type_face: TypeFace,
     paint: &Paint,
-  ) {
-    let c_text = std::ffi::CString::new(text).unwrap();
-    let c_font_family = std::ffi::CString::new(font_family).unwrap();
+  ) -> Result<(), NulError> {
+    let c_text = std::ffi::CString::new(text)?;
     unsafe {
       ffi::skiac_canvas_draw_text(
         self.0,
         c_text.as_ptr(),
+        len,
+        size,
         x,
         y,
-        font_size,
-        c_font_family.as_ptr(),
-        align,
+        type_face.0,
         paint.0,
       );
-    }
+    };
+    Ok(())
   }
 
   #[inline]
@@ -2522,6 +2578,35 @@ pub struct SkiaString {
 impl Drop for SkiaString {
   fn drop(&mut self) {
     unsafe { ffi::skiac_delete_sk_string(self.sk_string) }
+  }
+}
+
+#[repr(transparent)]
+#[derive(Clone, Debug)]
+pub struct TypeFace(*mut ffi::skiac_typeface);
+
+impl TypeFace {
+  #[inline]
+  pub fn create(
+    family_name: &str,
+    width: FontWidth,
+    weight: FontWeight,
+    slant: FontSlant,
+  ) -> Result<Self, NulError> {
+    Ok(TypeFace(unsafe {
+      ffi::skiac_typeface_create(
+        CString::new(family_name)?.as_ptr(),
+        width as i32,
+        weight as i32,
+        slant as i32,
+      )
+    }))
+  }
+}
+
+impl Drop for TypeFace {
+  fn drop(&mut self) {
+    unsafe { ffi::skiac_typeface_destroy(self.0) }
   }
 }
 

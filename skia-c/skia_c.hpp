@@ -40,6 +40,7 @@ typedef struct skiac_data skiac_data;
 typedef struct skiac_image skiac_image;
 typedef struct skiac_bitmap skiac_bitmap;
 typedef struct skiac_sk_string skiac_sk_string;
+typedef struct skiac_typeface skiac_typeface;
 
 struct skiac_rect
 {
@@ -139,10 +140,11 @@ extern "C"
   void skiac_canvas_draw_text(
       skiac_canvas *c_canvas,
       const char *text,
-      float x, float y,
-      float font_size,
-      const char *font_family,
-      uint8_t align,
+      size_t len,
+      float size,
+      float x,
+      float y,
+      skiac_typeface *c_typeface,
       skiac_paint *c_paint);
   void skiac_canvas_reset_transform(skiac_canvas *c_canvas);
   void skiac_canvas_clip_rect(skiac_canvas *c_canvas, float x, float y, float w, float h);
@@ -277,6 +279,10 @@ extern "C"
 
   // SkString
   void skiac_delete_sk_string(skiac_sk_string *c_sk_string);
+
+  // SkTypeface
+  SkTypeface *skiac_typeface_create(const char *font_family, int weight, int width, int slant);
+  void skiac_typeface_delete(skiac_typeface *c_typeface);
 }
 
 #endif // SKIA_CAPI_H

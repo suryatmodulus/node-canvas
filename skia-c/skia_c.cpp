@@ -13,6 +13,7 @@ using namespace skia::textlayout;
 #define MATRIX_CAST reinterpret_cast<SkMatrix *>(c_matrix)
 #define MASK_FILTER_CAST reinterpret_cast<SkMaskFilter *>(c_mask_filter)
 #define IMAGE_FILTER_CAST reinterpret_cast<SkImageFilter *>(c_image_filter)
+#define TYPEFACE_CAST reinterpret_cast<SkTypeface *>(c_typeface)
 
 extern "C"
 {
@@ -272,35 +273,17 @@ extern "C"
   void skiac_canvas_draw_text(
       skiac_canvas *c_canvas,
       const char *text,
-      float x, float y,
-      float font_size,
-      const char *font_family,
-      uint8_t align,
+      size_t len,
+      float size,
+      float x,
+      float y,
+      skiac_typeface *c_typeface,
       skiac_paint *c_paint)
   {
-    auto font_collection = sk_make_sp<FontCollection>();
-    auto font_mgr = SkFontMgr::RefDefault();
-    font_collection->setDefaultFontManager(font_mgr);
-    font_collection->enableFontFallback();
-
-    TextStyle text_style;
-    text_style.setFontFamilies({ SkString(font_family) });
-    text_style.setFontSize(font_size);
-    text_style.setForegroundColor(*PAINT_CAST);
-    text_style.setWordSpacing(0);
-    text_style.setHeight(1);
-
-    ParagraphStyle paragraph_style;
-    paragraph_style.turnHintingOff();
-    paragraph_style.setTextStyle(text_style);
-    paragraph_style.setTextAlign((TextAlign)align);
-
-    auto builder = ParagraphBuilder::make(paragraph_style, font_collection);
-    builder->addText(text, strlen(text));
-
-    auto paragraph = builder->Build();
-    paragraph->layout(100000);
-    paragraph->paint(CANVAS_CAST, x, y);
+    auto font = SkFont(sk_sp(TYPEFACE_CAST), size);
+    // SkFontMetrics *metrics;
+    // auto space_between = font.getMetrics(metrics);
+    CANVAS_CAST->drawSimpleText(text, len, SkTextEncoding::kUTF8, x, y, font, *PAINT_CAST);
   }
 
   void skiac_canvas_reset_transform(skiac_canvas *c_canvas)
@@ -969,5 +952,16 @@ extern "C"
   void skiac_delete_sk_string(skiac_sk_string *c_sk_string)
   {
     delete reinterpret_cast<SkString *>(c_sk_string);
+  }
+
+  // SkTypeface
+  SkTypeface *skiac_typeface_create(const char *font_family, int weight, int width, int slant)
+  {
+    return SkTypeface::MakeFromName(font_family, SkFontStyle(weight, width, (SkFontStyle::Slant)slant)).release();
+  }
+
+  void skiac_typeface_delete(skiac_typeface *c_typeface)
+  {
+    SkSafeUnref(TYPEFACE_CAST);
   }
 }

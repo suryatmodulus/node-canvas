@@ -16,6 +16,14 @@ pub enum SkError {
   StringToStrokeCapError(String),
   #[error("[`{0}`] is not valid LineJoin value")]
   StringToStrokeJoinError(String),
+  #[error("Convert Rust string into CString failed: [`{0}`]")]
+  StringToCStringError(std::ffi::NulError),
   #[error("[`{0}`]")]
   Generic(String),
+}
+
+impl From<std::ffi::NulError> for SkError {
+  fn from(value: std::ffi::NulError) -> Self {
+    SkError::StringToCStringError(value)
+  }
 }

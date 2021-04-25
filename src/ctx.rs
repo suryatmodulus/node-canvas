@@ -472,15 +472,21 @@ impl Context {
     };
 
     let x = x + 10_0000f32 * align_factor;
+    let typeface = TypeFace::create(
+      &state.font_style.family,
+      FontWidth::Normal,
+      FontWeight::Normal,
+      FontSlant::Upright,
+    )?;
     self.surface.canvas.draw_text(
       text,
+      text.len(),
       x,
       y,
       state.font_style.size,
-      &state.font_style.family,
-      align as u8,
+      typeface,
       &paint,
-    );
+    )?;
     Ok(())
   }
 
