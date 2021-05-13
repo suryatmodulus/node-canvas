@@ -1,6 +1,7 @@
 use std::num::ParseFloatError;
 
 use nom::{
+  branch::alt,
   bytes::complete::{tag, take_till, take_until},
   character::{complete::char, is_alphabetic},
   combinator::map_res,
@@ -99,22 +100,44 @@ fn number_percentage(input: &str) -> IResult<&str, f32> {
 }
 
 #[inline(always)]
-pub fn css_filter(input: &str) -> IResult<&str, Vec<CssFilter>> {
-  let mut filters = Vec::with_capacity(10);
-  let mut input = input.trim();
-
-  if let Ok((blurred_input, _)) = tag::<&str, &str, Error<&str>>("blur(")(input) {
-    let (blurred_input, pixel) = pixel_in_tuple(blurred_input)?;
-    let (finished_input, _) = char(')')(blurred_input)?;
-    input = finished_input.trim();
-    filters.push(CssFilter::Blur(pixel));
-  }
+fn brightness_parser(input: &str) -> IResult<&str, Option<CssFilter>> {
   if let Ok((brightness_input, _)) = tag::<&str, &str, Error<&str>>("brightness(")(input) {
     let (brightness_input, brightness) = number_percentage(brightness_input)?;
     let (brightness_input, _) = char(')')(brightness_input.trim())?;
-    input = brightness_input.trim();
-    filters.push(CssFilter::Brightness(brightness));
+    Ok((
+      brightness_input.trim(),
+      Some(CssFilter::Brightness(brightness)),
+    ))
+  } else {
+    Ok((input, None))
   }
+}
+
+#[inline(always)]
+fn blur_parser(input: &str) -> IResult<&str, Option<CssFilter>> {
+  if let Ok((blurred_input, _)) = tag::<&str, &str, Error<&str>>("blur(")(input) {
+    let (blurred_input, pixel) = pixel_in_tuple(blurred_input)?;
+    let (finished_input, _) = char(')')(blurred_input)?;
+    Ok((finished_input.trim(), Some(CssFilter::Blur(pixel))))
+  } else {
+    Ok((input, None))
+  }
+}
+
+#[inline(always)]
+pub fn css_filter(input: &str) -> IResult<&str, Vec<CssFilter>> {
+  let mut filters = Vec::with_capacity(10);
+  let mut input = input.trim();
+  let mut last_input = "";
+  while input != last_input {
+    last_input = input;
+    let (output, filter) = alt((blur_parser, brightness_parser))(input)?;
+    input = output;
+    if let Some(filter) = filter {
+      filters.push(filter);
+    }
+  }
+
   Ok((input, filters))
 }
 
@@ -182,13 +205,13 @@ fn composite_parse() {
     ))
   );
 
-  // assert_eq!(
-  //   css_filter("brightness(2) blur(1.5rem)"),
-  //   Ok((
-  //     "",
-  //     vec![CssFilter::Brightness(2.0f32), CssFilter::Blur(24.0)]
-  //   ))
-  // );
+  assert_eq!(
+    css_filter("brightness(2) blur(1.5rem)"),
+    Ok((
+      "",
+      vec![CssFilter::Brightness(2.0f32), CssFilter::Blur(24.0)]
+    ))
+  );
 }
 
 #[test]
