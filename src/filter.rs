@@ -1,5 +1,6 @@
 use std::num::ParseFloatError;
 
+use cssparser::{Color, Parser, ParserInput, RGBA};
 use nom::{
   branch::alt,
   bytes::complete::{tag, take_till, take_until},
@@ -38,6 +39,7 @@ pub enum CssFilter {
   Blur(f32),
   Brightness(f32),
   Contrast(f32),
+  DropShadow(f32, f32, f32, RGBA),
 }
 
 #[inline(always)]
@@ -100,42 +102,89 @@ fn number_percentage(input: &str) -> IResult<&str, f32> {
 }
 
 #[inline(always)]
-fn brightness_parser(input: &str) -> IResult<&str, Option<CssFilter>> {
-  if let Ok((brightness_input, _)) = tag::<&str, &str, Error<&str>>("brightness(")(input) {
-    let (brightness_input, brightness) = number_percentage(brightness_input)?;
-    let (brightness_input, _) = char(')')(brightness_input.trim())?;
-    Ok((
-      brightness_input.trim(),
-      Some(CssFilter::Brightness(brightness)),
-    ))
-  } else {
-    Ok((input, None))
-  }
+fn brightness_parser(input: &str) -> IResult<&str, CssFilter> {
+  let (brightness_input, _) = tag("brightness(")(input)?;
+  let (brightness_input, brightness) = number_percentage(brightness_input)?;
+  let (brightness_input, _) = char(')')(brightness_input.trim())?;
+  Ok((brightness_input.trim(), CssFilter::Brightness(brightness)))
 }
 
 #[inline(always)]
-fn blur_parser(input: &str) -> IResult<&str, Option<CssFilter>> {
-  if let Ok((blurred_input, _)) = tag::<&str, &str, Error<&str>>("blur(")(input) {
-    let (blurred_input, pixel) = pixel_in_tuple(blurred_input)?;
-    let (finished_input, _) = char(')')(blurred_input)?;
-    Ok((finished_input.trim(), Some(CssFilter::Blur(pixel))))
+fn blur_parser(input: &str) -> IResult<&str, CssFilter> {
+  let (blurred_input, _) = tag("blur(")(input)?;
+
+  let (blurred_input, pixel) = pixel_in_tuple(blurred_input)?;
+  let (finished_input, _) = char(')')(blurred_input)?;
+  Ok((finished_input.trim(), CssFilter::Blur(pixel)))
+}
+
+#[inline(always)]
+fn contrast_parser(input: &str) -> IResult<&str, CssFilter> {
+  let (contrast_input, _) = tag("contrast(")(input)?;
+  let (contrast_input, contrast) = number_percentage(contrast_input)?;
+  let (contrast_input, _) = char(')')(contrast_input.trim())?;
+  Ok((contrast_input.trim(), CssFilter::Contrast(contrast)))
+}
+
+#[inline(always)]
+fn parse_drop_shadow(input: &str) -> IResult<&str, CssFilter> {
+  let (drop_shadow_input, _) = tag("drop-shadow(")(input)?;
+  let drop_shadow_input = drop_shadow_input.trim();
+  let (offset_x_output, offset_x) = map_res(take_until(" "), pixel)(drop_shadow_input)?;
+  let offset_x_output = offset_x_output.trim();
+  let (offset_y_output, offset_y) =
+    map_res(take_till(|ch| ch == ' ' || ch == ')'), pixel)(offset_x_output)?;
+  let offset_y_output = offset_y_output.trim();
+  let (blur_radius_output, blur_radius) =
+    map_res(take_till(|ch| ch == ' ' || ch == ')'), pixel)(offset_y_output)
+      .unwrap_or_else(|_: Err<Error<&str>>| (offset_y_output, 0.0f32));
+  let blur_radius_output = blur_radius_output.trim();
+  let is_rgb_fn = blur_radius_output.starts_with("rgb(") || blur_radius_output.starts_with("rgba(");
+  let (shadow_color_output, shadow_color_str) =
+    take_until(if is_rgb_fn { "))" } else { ")" })(blur_radius_output)?;
+  let shadow_color_str = shadow_color_str.trim();
+  static BLACK: RGBA = RGBA {
+    red: 0,
+    green: 0,
+    blue: 0,
+    alpha: 255,
+  };
+  let shadow_color = if !shadow_color_str.is_empty() {
+    let mut parser_input = ParserInput::new(shadow_color_str);
+    let mut parser = Parser::new(&mut parser_input);
+    let color = Color::parse(&mut parser).unwrap_or_else(|_| Color::RGBA(BLACK));
+    if let Color::RGBA(rgba) = color {
+      rgba
+    } else {
+      BLACK
+    }
   } else {
-    Ok((input, None))
+    BLACK
+  };
+  let (mut drop_shadow_output, _) = char(')')(shadow_color_output.trim())?;
+  if is_rgb_fn {
+    let (trimmed_drop_shadow_output, _) = char(')')(drop_shadow_output)?;
+    drop_shadow_output = trimmed_drop_shadow_output;
   }
+  Ok((
+    drop_shadow_output.trim(),
+    CssFilter::DropShadow(offset_x, offset_y, blur_radius, shadow_color),
+  ))
 }
 
 #[inline(always)]
 pub fn css_filter(input: &str) -> IResult<&str, Vec<CssFilter>> {
   let mut filters = Vec::with_capacity(10);
   let mut input = input.trim();
-  let mut last_input = "";
-  while input != last_input {
-    last_input = input;
-    let (output, filter) = alt((blur_parser, brightness_parser))(input)?;
+  while let Ok((output, filter)) = alt((
+    blur_parser,
+    brightness_parser,
+    contrast_parser,
+    parse_drop_shadow,
+  ))(input)
+  {
     input = output;
-    if let Some(filter) = filter {
-      filters.push(filter);
-    }
+    filters.push(filter);
   }
 
   Ok((input, filters))
@@ -196,6 +245,64 @@ fn parse_brightness() {
 }
 
 #[test]
+fn drop_shadow_parse() {
+  assert_eq!(
+    parse_drop_shadow("drop-shadow(2px 2px)"),
+    Ok((
+      "",
+      CssFilter::DropShadow(2.0f32, 2.0f32, 0.0f32, RGBA::new(0, 0, 0, 255))
+    ))
+  );
+  assert_eq!(
+    parse_drop_shadow("drop-shadow(2px 2px 5px)"),
+    Ok((
+      "",
+      CssFilter::DropShadow(2.0f32, 2.0f32, 5.0f32, RGBA::new(0, 0, 0, 255))
+    ))
+  );
+
+  assert_eq!(
+    parse_drop_shadow("drop-shadow(2px 2px 5px #2F14DF)"),
+    Ok((
+      "",
+      CssFilter::DropShadow(2.0f32, 2.0f32, 5.0f32, RGBA::new(47, 20, 223, 255))
+    ))
+  );
+
+  assert_eq!(
+    parse_drop_shadow("drop-shadow(2px 2px 5px rgba(47, 20, 223, 255))"),
+    Ok((
+      "",
+      CssFilter::DropShadow(2.0f32, 2.0f32, 5.0f32, RGBA::new(47, 20, 223, 255))
+    ))
+  );
+}
+
+#[test]
+fn contrast_parse() {
+  assert_eq!(
+    css_filter("contrast(200%)"),
+    Ok(("", vec![CssFilter::Contrast(2.0f32)]))
+  );
+  assert_eq!(
+    css_filter("contrast( 200%)"),
+    Ok(("", vec![CssFilter::Contrast(2.0f32)]))
+  );
+  assert_eq!(
+    css_filter("contrast(200% )"),
+    Ok(("", vec![CssFilter::Contrast(2.0f32)]))
+  );
+  assert_eq!(
+    css_filter("contrast( 200% )"),
+    Ok(("", vec![CssFilter::Contrast(2.0f32)]))
+  );
+  assert_eq!(
+    css_filter("contrast( 200% )  "),
+    Ok(("", vec![CssFilter::Contrast(2.0f32)]))
+  );
+}
+
+#[test]
 fn composite_parse() {
   assert_eq!(
     css_filter("blur(1.5rem) brightness(2)"),
@@ -210,6 +317,42 @@ fn composite_parse() {
     Ok((
       "",
       vec![CssFilter::Brightness(2.0f32), CssFilter::Blur(24.0)]
+    ))
+  );
+
+  assert_eq!(
+    css_filter("drop-shadow(2px 2px 5px rgba(47, 20, 223, 255)) brightness(2) blur(1.5rem)"),
+    Ok((
+      "",
+      vec![
+        CssFilter::DropShadow(2.0f32, 2.0f32, 5.0f32, RGBA::new(47, 20, 223, 255)),
+        CssFilter::Brightness(2.0f32),
+        CssFilter::Blur(24.0)
+      ]
+    ))
+  );
+
+  assert_eq!(
+    css_filter("brightness(2) drop-shadow(2px 2px 5px rgba(47, 20, 223, 255)) blur(1.5rem)"),
+    Ok((
+      "",
+      vec![
+        CssFilter::Brightness(2.0f32),
+        CssFilter::DropShadow(2.0f32, 2.0f32, 5.0f32, RGBA::new(47, 20, 223, 255)),
+        CssFilter::Blur(24.0)
+      ]
+    ))
+  );
+
+  assert_eq!(
+    css_filter("brightness(2) blur(1.5rem) drop-shadow(2px 2px 5px rgba(47, 20, 223, 255))"),
+    Ok((
+      "",
+      vec![
+        CssFilter::Brightness(2.0f32),
+        CssFilter::Blur(24.0),
+        CssFilter::DropShadow(2.0f32, 2.0f32, 5.0f32, RGBA::new(47, 20, 223, 255)),
+      ]
     ))
   );
 }
