@@ -40,6 +40,12 @@ pub enum CssFilter {
   Brightness(f32),
   Contrast(f32),
   DropShadow(f32, f32, f32, RGBA),
+  Grayscale(f32),
+  HueRotate(f32),
+  Invert(f32),
+  Opacity(f32),
+  Saturate(f32),
+  Sepia(f32),
 }
 
 #[inline(always)]
@@ -101,13 +107,58 @@ fn number_percentage(input: &str) -> IResult<&str, f32> {
   }
 }
 
-#[inline(always)]
-fn brightness_parser(input: &str) -> IResult<&str, CssFilter> {
-  let (brightness_input, _) = tag("brightness(")(input)?;
-  let (brightness_input, brightness) = number_percentage(brightness_input)?;
-  let (brightness_input, _) = char(')')(brightness_input.trim())?;
-  Ok((brightness_input.trim(), CssFilter::Brightness(brightness)))
+macro_rules! percentage_parser {
+  ($filter_name:ident, $filter_rule:expr, $filter_value:ident) => {
+    fn $filter_name(input: &str) -> IResult<&str, CssFilter> {
+      let (input, _) = tag($filter_rule)(input)?;
+      let (input, value) = number_percentage(input)?;
+      let (input, _) = char(')')(input.trim())?;
+      Ok((input.trim(), CssFilter::$filter_value(value)))
+    }
+
+    mod $filter_name {
+      #[test]
+      fn $filter_name() {
+        use super::CssFilter;
+        assert_eq!(
+          super::$filter_name(concat!($filter_rule, "2)")),
+          Ok(("", CssFilter::$filter_value(2.0f32)))
+        );
+        assert_eq!(
+          super::$filter_name(concat!($filter_rule, "2%)")),
+          Ok(("", CssFilter::$filter_value(0.02f32)))
+        );
+        assert_eq!(
+          super::$filter_name(concat!($filter_rule, " 2%)")),
+          Ok(("", CssFilter::$filter_value(0.02f32)))
+        );
+
+        assert_eq!(
+          super::$filter_name(concat!($filter_rule, " 2% )")),
+          Ok(("", CssFilter::$filter_value(0.02f32)))
+        );
+
+        assert_eq!(
+          super::$filter_name(concat!($filter_rule, " 2 % )")),
+          Ok(("", CssFilter::$filter_value(0.02f32)))
+        );
+
+        assert_eq!(
+          super::$filter_name(concat!($filter_rule, " 2 % )  ")),
+          Ok(("", CssFilter::$filter_value(0.02f32)))
+        );
+      }
+    }
+  };
 }
+
+percentage_parser!(brightness_parser, "brightness(", Brightness);
+percentage_parser!(contrast_parser, "contrast(", Contrast);
+percentage_parser!(grayscale_parser, "grayscale(", Grayscale);
+percentage_parser!(invert_parser, "invert(", Invert);
+percentage_parser!(opacity_parser, "opacity(", Opacity);
+percentage_parser!(saturate_parser, "saturate(", Saturate);
+percentage_parser!(sepia_parser, "sepia(", Sepia);
 
 #[inline(always)]
 fn blur_parser(input: &str) -> IResult<&str, CssFilter> {
@@ -116,14 +167,6 @@ fn blur_parser(input: &str) -> IResult<&str, CssFilter> {
   let (blurred_input, pixel) = pixel_in_tuple(blurred_input)?;
   let (finished_input, _) = char(')')(blurred_input)?;
   Ok((finished_input.trim(), CssFilter::Blur(pixel)))
-}
-
-#[inline(always)]
-fn contrast_parser(input: &str) -> IResult<&str, CssFilter> {
-  let (contrast_input, _) = tag("contrast(")(input)?;
-  let (contrast_input, contrast) = number_percentage(contrast_input)?;
-  let (contrast_input, _) = char(')')(contrast_input.trim())?;
-  Ok((contrast_input.trim(), CssFilter::Contrast(contrast)))
 }
 
 #[inline(always)]
@@ -181,6 +224,11 @@ pub fn css_filter(input: &str) -> IResult<&str, Vec<CssFilter>> {
     brightness_parser,
     contrast_parser,
     parse_drop_shadow,
+    grayscale_parser,
+    invert_parser,
+    opacity_parser,
+    saturate_parser,
+    sepia_parser,
   ))(input)
   {
     input = output;
@@ -217,34 +265,6 @@ fn parse_blur() {
 }
 
 #[test]
-fn parse_brightness() {
-  assert_eq!(
-    css_filter("brightness(2)"),
-    Ok(("", vec![CssFilter::Brightness(2.0f32)]))
-  );
-  assert_eq!(
-    css_filter("brightness(2%)"),
-    Ok(("", vec![CssFilter::Brightness(0.02f32)]))
-  );
-  assert_eq!(
-    css_filter("brightness( 2%)"),
-    Ok(("", vec![CssFilter::Brightness(0.02f32)]))
-  );
-  assert_eq!(
-    css_filter("brightness( 2% )"),
-    Ok(("", vec![CssFilter::Brightness(0.02f32)]))
-  );
-  assert_eq!(
-    css_filter("brightness( 2 % )"),
-    Ok(("", vec![CssFilter::Brightness(0.02f32)]))
-  );
-  assert_eq!(
-    css_filter(" brightness( 2 % )  "),
-    Ok(("", vec![CssFilter::Brightness(0.02f32)]))
-  );
-}
-
-#[test]
 fn drop_shadow_parse() {
   assert_eq!(
     parse_drop_shadow("drop-shadow(2px 2px)"),
@@ -275,30 +295,6 @@ fn drop_shadow_parse() {
       "",
       CssFilter::DropShadow(2.0f32, 2.0f32, 5.0f32, RGBA::new(47, 20, 223, 255))
     ))
-  );
-}
-
-#[test]
-fn contrast_parse() {
-  assert_eq!(
-    css_filter("contrast(200%)"),
-    Ok(("", vec![CssFilter::Contrast(2.0f32)]))
-  );
-  assert_eq!(
-    css_filter("contrast( 200%)"),
-    Ok(("", vec![CssFilter::Contrast(2.0f32)]))
-  );
-  assert_eq!(
-    css_filter("contrast(200% )"),
-    Ok(("", vec![CssFilter::Contrast(2.0f32)]))
-  );
-  assert_eq!(
-    css_filter("contrast( 200% )"),
-    Ok(("", vec![CssFilter::Contrast(2.0f32)]))
-  );
-  assert_eq!(
-    css_filter("contrast( 200% )  "),
-    Ok(("", vec![CssFilter::Contrast(2.0f32)]))
   );
 }
 
