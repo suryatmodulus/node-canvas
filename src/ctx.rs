@@ -1636,10 +1636,15 @@ fn set_filter(ctx: CallContext) -> Result<JsUndefined> {
   let this = ctx.this_unchecked::<JsObject>();
   let context_2d = ctx.env.unwrap::<Context>(&this)?;
   let filter_str = filter_str.as_str()?;
-  let (_, filters) =
-    css_filter(filter_str).map_err(|e| Error::new(Status::InvalidArg, format!("{}", e)))?;
-  context_2d.filters = filters;
-  context_2d.filters_string = filter_str.to_owned();
+  if filter_str.trim() == "none" {
+    context_2d.filters_string = "none".to_owned();
+    context_2d.filters = vec![];
+  } else {
+    let (_, filters) =
+      css_filter(filter_str).map_err(|e| Error::new(Status::InvalidArg, format!("{}", e)))?;
+    context_2d.filters = filters;
+    context_2d.filters_string = filter_str.to_owned();
+  }
   ctx.env.get_undefined()
 }
 

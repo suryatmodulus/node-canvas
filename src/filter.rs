@@ -107,6 +107,26 @@ fn number_percentage(input: &str) -> IResult<&str, f32> {
   }
 }
 
+#[inline(always)]
+fn hue_rotate_parser(input: &str) -> IResult<&str, CssFilter> {
+  let (rotated_output, _) = tag("hue-rotate(")(input)?;
+  let (rotated_output, angle) = float(rotated_output.trim())?;
+  let output = rotated_output.trim();
+  let (output, filter) = if let Ok((output, _)) = tag::<&str, &str, Error<&str>>("deg")(output) {
+    (output, CssFilter::HueRotate(angle))
+  } else if let Ok((output, _)) = tag::<&str, &str, Error<&str>>("turn")(output) {
+    (output, CssFilter::HueRotate(angle.fract() * 360.0))
+  } else if let Ok((output, _)) = tag::<&str, &str, Error<&str>>("rad")(output) {
+    (output, CssFilter::HueRotate(angle.to_degrees()))
+  } else if let Ok((output, _)) = tag::<&str, &str, Error<&str>>("grad")(output) {
+    (output, CssFilter::HueRotate(angle * 0.9))
+  } else {
+    (output, CssFilter::HueRotate(0.0f32))
+  };
+  let (finished_input, _) = char(')')(output.trim())?;
+  Ok((finished_input.trim(), filter))
+}
+
 macro_rules! percentage_parser {
   ($filter_name:ident, $filter_rule:expr, $filter_value:ident) => {
     fn $filter_name(input: &str) -> IResult<&str, CssFilter> {
@@ -127,6 +147,10 @@ macro_rules! percentage_parser {
         assert_eq!(
           super::$filter_name(concat!($filter_rule, "2%)")),
           Ok(("", CssFilter::$filter_value(0.02f32)))
+        );
+        assert_eq!(
+          super::$filter_name(concat!($filter_rule, ".2)")),
+          Ok(("", CssFilter::$filter_value(0.2f32)))
         );
         assert_eq!(
           super::$filter_name(concat!($filter_rule, " 2%)")),
@@ -170,7 +194,8 @@ fn blur_parser(input: &str) -> IResult<&str, CssFilter> {
 }
 
 #[inline(always)]
-fn parse_drop_shadow(input: &str) -> IResult<&str, CssFilter> {
+#[allow(clippy::unnecessary_lazy_evaluations)]
+fn drop_shadow_parser(input: &str) -> IResult<&str, CssFilter> {
   let (drop_shadow_input, _) = tag("drop-shadow(")(input)?;
   let drop_shadow_input = drop_shadow_input.trim();
   let (offset_x_output, offset_x) = map_res(take_until(" "), pixel)(drop_shadow_input)?;
@@ -223,8 +248,9 @@ pub fn css_filter(input: &str) -> IResult<&str, Vec<CssFilter>> {
     blur_parser,
     brightness_parser,
     contrast_parser,
-    parse_drop_shadow,
+    drop_shadow_parser,
     grayscale_parser,
+    hue_rotate_parser,
     invert_parser,
     opacity_parser,
     saturate_parser,
@@ -267,14 +293,14 @@ fn parse_blur() {
 #[test]
 fn drop_shadow_parse() {
   assert_eq!(
-    parse_drop_shadow("drop-shadow(2px 2px)"),
+    drop_shadow_parser("drop-shadow(2px 2px)"),
     Ok((
       "",
       CssFilter::DropShadow(2.0f32, 2.0f32, 0.0f32, RGBA::new(0, 0, 0, 255))
     ))
   );
   assert_eq!(
-    parse_drop_shadow("drop-shadow(2px 2px 5px)"),
+    drop_shadow_parser("drop-shadow(2px 2px 5px)"),
     Ok((
       "",
       CssFilter::DropShadow(2.0f32, 2.0f32, 5.0f32, RGBA::new(0, 0, 0, 255))
@@ -282,7 +308,7 @@ fn drop_shadow_parse() {
   );
 
   assert_eq!(
-    parse_drop_shadow("drop-shadow(2px 2px 5px #2F14DF)"),
+    drop_shadow_parser("drop-shadow(2px 2px 5px #2F14DF)"),
     Ok((
       "",
       CssFilter::DropShadow(2.0f32, 2.0f32, 5.0f32, RGBA::new(47, 20, 223, 255))
@@ -290,7 +316,7 @@ fn drop_shadow_parse() {
   );
 
   assert_eq!(
-    parse_drop_shadow("drop-shadow(2px 2px 5px rgba(47, 20, 223, 255))"),
+    drop_shadow_parser("drop-shadow(2px 2px 5px rgba(47, 20, 223, 255))"),
     Ok((
       "",
       CssFilter::DropShadow(2.0f32, 2.0f32, 5.0f32, RGBA::new(47, 20, 223, 255))
@@ -350,6 +376,26 @@ fn composite_parse() {
         CssFilter::DropShadow(2.0f32, 2.0f32, 5.0f32, RGBA::new(47, 20, 223, 255)),
       ]
     ))
+  );
+}
+
+#[test]
+fn hue_rotate_parse() {
+  assert_eq!(
+    hue_rotate_parser("hue-rotate(0)"),
+    Ok(("", CssFilter::HueRotate(0.0f32)))
+  );
+  assert_eq!(
+    hue_rotate_parser("hue-rotate(90deg)"),
+    Ok(("", CssFilter::HueRotate(90.0f32)))
+  );
+  assert_eq!(
+    hue_rotate_parser("hue-rotate(-0.25turn)"),
+    Ok(("", CssFilter::HueRotate(-90.0f32)))
+  );
+  assert_eq!(
+    hue_rotate_parser("hue-rotate(3.141592653rad)"),
+    Ok(("", CssFilter::HueRotate(180.0f32)))
   );
 }
 
