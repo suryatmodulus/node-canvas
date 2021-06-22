@@ -261,6 +261,17 @@ mod ffi {
       paint: *mut skiac_paint,
     );
 
+    pub fn skiac_canvas_draw_round_rect(
+      canvas: *mut skiac_canvas,
+      x: f32,
+      y: f32,
+      w: f32,
+      h: f32,
+      rx: f32,
+      ry: f32,
+      paint: *mut skiac_paint,
+    );
+
     pub fn skiac_canvas_draw_surface(
       canvas: *mut skiac_canvas,
       surface: *mut skiac_surface,

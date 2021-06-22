@@ -247,6 +247,25 @@ extern "C"
     CANVAS_CAST->drawRect(SkRect::MakeXYWH(x, y, w, h), *PAINT_CAST);
   }
 
+  void skiac_canvas_draw_round_rect(
+      skiac_canvas *c_canvas,
+      float x,
+      float y,
+      float w,
+      float h,
+      float rt,
+      float rr,
+      float rb,
+      float rl,
+      skiac_paint *c_paint)
+  {
+    auto rect = SkRect::MakeXYWH(x, y, w, h);
+    auto rrect = SkRRect::MakeEmpty();
+    rrect.setNinePatch(rect, rl, rt, rr, rb);
+
+    CANVAS_CAST->drawRRect(rrect, *PAINT_CAST);
+  }
+
   void skiac_canvas_draw_surface(
       skiac_canvas *c_canvas,
       skiac_surface *c_surface,

@@ -126,6 +126,7 @@ impl Context {
         Property::new(env, "setLineDash")?.with_method(set_line_dash),
         Property::new(env, "stroke")?.with_method(stroke),
         Property::new(env, "strokeRect")?.with_method(stroke_rect),
+        Property::new(env, "strokeRoundRect")?.with_method(stroke_round_rect),
         Property::new(env, "strokeText")?.with_method(stroke_text),
         Property::new(env, "translate")?.with_method(translate),
         Property::new(env, "transform")?.with_method(transform),
@@ -196,6 +197,37 @@ impl Context {
   }
 
   #[inline(always)]
+  pub fn stroke_round_rect(
+    &mut self,
+    x: f32,
+    y: f32,
+    w: f32,
+    h: f32,
+    rt: f32,
+    rr: f32,
+    rb: f32,
+    rl: f32,
+  ) -> result::Result<(), SkError> {
+    let stroke_paint = self.stroke_paint()?;
+    if let Some(shadow_paint) = self.shadow_blur_paint(&stroke_paint) {
+      let surface = &mut self.surface;
+      let last_state = self.states.last().unwrap();
+      surface.save();
+      Self::apply_shadow_offset_matrix(
+        surface,
+        last_state.shadow_offset_x,
+        last_state.shadow_offset_y,
+      )?;
+      surface.draw_rect(x, y, w, h, &shadow_paint);
+      surface.restore();
+    };
+
+    self.surface.draw_rect(x, y, w, h, &stroke_paint);
+
+    Ok(())
+  }
+
+  #[inline(always)]
   pub fn stroke_text(&mut self, text: &str, x: f32, y: f32) -> result::Result<(), SkError> {
     let stroke_paint = self.stroke_paint()?;
     self.draw_text(text, x, y, &stroke_paint)?;
@@ -204,6 +236,37 @@ impl Context {
 
   #[inline(always)]
   pub fn fill_rect(&mut self, x: f32, y: f32, w: f32, h: f32) -> result::Result<(), SkError> {
+    let fill_paint = self.fill_paint()?;
+    if let Some(shadow_paint) = self.shadow_blur_paint(&fill_paint) {
+      let surface = &mut self.surface;
+      let last_state = self.states.last().unwrap();
+      surface.save();
+      Self::apply_shadow_offset_matrix(
+        surface,
+        last_state.shadow_offset_x,
+        last_state.shadow_offset_y,
+      )?;
+      surface.draw_rect(x, y, w, h, &shadow_paint);
+      surface.restore();
+    };
+
+    self.surface.draw_rect(x, y, w, h, &fill_paint);
+
+    Ok(())
+  }
+
+  #[inline(always)]
+  pub fn fill_round_rect(
+    &mut self,
+    x: f32,
+    y: f32,
+    w: f32,
+    h: f32,
+    rt: f32,
+    rr: f32,
+    rb: f32,
+    rl: f32,
+  ) -> result::Result<(), SkError> {
     let fill_paint = self.fill_paint()?;
     if let Some(shadow_paint) = self.shadow_blur_paint(&fill_paint) {
       let surface = &mut self.surface;
@@ -1036,6 +1099,41 @@ fn stroke_rect(ctx: CallContext) -> Result<JsUndefined> {
   let y: f64 = ctx.get::<JsNumber>(1)?.try_into()?;
   let w: f64 = ctx.get::<JsNumber>(2)?.try_into()?;
   let h: f64 = ctx.get::<JsNumber>(3)?.try_into()?;
+
+  let this = ctx.this_unchecked::<JsObject>();
+  let context_2d = ctx.env.unwrap::<Context>(&this)?;
+
+  context_2d.stroke_rect(x as f32, y as f32, w as f32, h as f32)?;
+
+  ctx.env.get_undefined()
+}
+
+#[js_function(4)]
+fn stroke_round_rect(ctx: CallContext) -> Result<JsUndefined> {
+  let x: f64 = ctx.get::<JsNumber>(0)?.try_into()?;
+  let y: f64 = ctx.get::<JsNumber>(1)?.try_into()?;
+  let w: f64 = ctx.get::<JsNumber>(2)?.try_into()?;
+  let h: f64 = ctx.get::<JsNumber>(3)?.try_into()?;
+  let radius = ctx.get::<JsObject>(4)?;
+
+  if !radius.is_array()? {
+    return Err(Error::new(
+      Status::InvalidArg,
+      "Radius must be array".to_owned(),
+    ));
+  }
+
+  let array_len = radius.get_array_length_unchecked()?;
+
+  if array_len < 1 || array_len > 4 {
+    return Err(Error::new(
+      Status::InvalidArg,
+      format!(
+        "{} radii provided. Between one and four radii are necessary.",
+        array_len
+      ),
+    ));
+  }
 
   let this = ctx.this_unchecked::<JsObject>();
   let context_2d = ctx.env.unwrap::<Context>(&this)?;

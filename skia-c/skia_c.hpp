@@ -161,6 +161,17 @@ extern "C"
       skiac_canvas *c_canvas,
       float x, float y, float w, float h,
       skiac_paint *c_paint);
+  void skiac_canvas_draw_round_rect(
+      skiac_canvas *c_canvas,
+      float x,
+      float y,
+      float w,
+      float h,
+      float rt,
+      float rr,
+      float rb,
+      float rl,
+      skiac_paint *c_paint);
   void skiac_canvas_draw_surface(
       skiac_canvas *c_canvas,
       skiac_surface *c_surface,
