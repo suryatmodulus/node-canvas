@@ -297,7 +297,14 @@ export interface Canvas {
 export function createCanvas(width: number, height: number): Canvas
 
 interface IGlobalFonts {
-  readonly families: string[]
+  readonly families: {
+    familyName: string
+    styles: {
+      weight: number
+      width: string
+      style: string
+    }[]
+  }[]
   // return true if succeeded
   register(font: Buffer): boolean
   // absolute path

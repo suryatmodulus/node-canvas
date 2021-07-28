@@ -17,7 +17,7 @@ const FONT_PATH: &str = "/system/fonts";
 
 static FONT_DIR: OnceCell<u32> = OnceCell::new();
 
-#[js_function(1)]
+#[js_function(2)]
 fn register(ctx: CallContext) -> Result<JsBoolean> {
   let this = ctx.this_unchecked::<JsObject>();
   let font_collection = ctx.env.unwrap::<Rc<FontCollection>>(&this)?;
@@ -26,27 +26,32 @@ fn register(ctx: CallContext) -> Result<JsBoolean> {
   ctx.env.get_boolean(register_result)
 }
 
-#[js_function(1)]
+#[js_function(2)]
 fn register_from_path(ctx: CallContext) -> Result<JsBoolean> {
   let this = ctx.this_unchecked::<JsObject>();
   let font_collection = ctx.env.unwrap::<Rc<FontCollection>>(&this)?;
   let font_path = ctx.get::<JsString>(0)?.into_utf8()?;
-  let register_result = font_collection.register_from_path(font_path.as_str()?);
+  let name_alias = ctx.get::<JsString>(1)?.into_utf8()?;
+  let name_alias = name_alias.as_str()?;
+  let maybe_name_alias = if name_alias.is_empty() {
+    None
+  } else {
+    Some(name_alias)
+  };
+  let register_result = font_collection.register_from_path(font_path.as_str()?, maybe_name_alias);
   ctx.env.get_boolean(register_result)
 }
 
 #[js_function]
-fn get_families(ctx: CallContext) -> Result<JsObject> {
+fn get_families(ctx: CallContext) -> Result<JsString> {
   let this = ctx.this_unchecked::<JsObject>();
   let font_collection = ctx.env.unwrap::<Rc<FontCollection>>(&this)?;
 
-  let mut families = ctx.env.create_object()?;
-  let family_names = font_collection.get_families();
-  for name in &family_names {
-    families.set_named_property(name.as_str(), ctx.env.get_boolean(true)?)?;
-  }
+  let all_style_set = font_collection.get_families();
 
-  Ok(families)
+  ctx
+    .env
+    .create_string_from_std(serde_json::to_string(&all_style_set)?)
 }
 
 #[js_function]
@@ -63,7 +68,7 @@ fn load_system_fonts(ctx: CallContext) -> Result<JsNumber> {
         match ext {
           Some("ttf") | Some("ttc") | Some("otf") | Some("pfb") => {
             if let Some(p) = p.into_os_string().to_str() {
-              if font_collection.register_from_path(p) {
+              if font_collection.register_from_path(p, None) {
                 count += 1;
               }
             }

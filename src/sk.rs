@@ -1,6 +1,5 @@
 use std::f32::consts::PI;
-use std::ffi::CStr;
-use std::ffi::CString;
+use std::ffi::{c_void, CStr, CString};
 use std::ops::{Deref, DerefMut};
 use std::os::raw::c_char;
 use std::ptr;
@@ -8,10 +7,11 @@ use std::slice;
 use std::str::FromStr;
 
 use crate::error::SkError;
-use crate::font::FontStyle;
+use crate::font::{FontStretch, FontStyle};
 use crate::image::ImageData;
 
 mod ffi {
+  use std::ffi::c_void;
   use std::os::raw::c_char;
 
   use super::SkiaString;
@@ -171,6 +171,9 @@ mod ffi {
   pub struct skiac_font_collection {
     _unused: [u8; 0],
   }
+
+  pub type SkiacFontCollectionGetFamily =
+    Option<unsafe extern "C" fn(width: i32, weight: i32, slant: i32, raw_cb: *mut c_void)>;
 
   extern "C" {
 
@@ -620,6 +623,8 @@ mod ffi {
       c_font_collection: *mut skiac_font_collection,
       i: u32,
       skia_string: *mut SkiaString,
+      on_get_style_rust: *mut c_void,
+      on_get_style: SkiacFontCollectionGetFamily,
     );
 
     pub fn skiac_font_collection_register(
@@ -631,6 +636,7 @@ mod ffi {
     pub fn skiac_font_collection_register_from_path(
       c_font_collection: *mut skiac_font_collection,
       font_path: *const c_char,
+      maybe_name_alias: *const c_char,
     ) -> usize;
 
     pub fn skiac_font_collection_destroy(c_font_collection: *mut skiac_font_collection);
@@ -2873,19 +2879,50 @@ impl FontCollection {
   }
 
   #[inline]
-  pub fn get_families(&self) -> Vec<String> {
+  pub fn get_families(&self) -> Vec<FontStyleSet> {
     let mut names = Vec::new();
+
     unsafe {
       let size = ffi::skiac_font_collection_get_default_fonts_count(self.0);
       for i in 0..size {
+        let mut styles = Vec::new();
+        let on_get_style: Box<dyn FnMut(i32, i32, i32)> =
+          Box::new(|width: i32, weight: i32, slant: i32| {
+            styles.push((
+              FontStretch::from(width),
+              weight,
+              match slant {
+                0 => FontStyle::Normal,
+                1 => FontStyle::Italic,
+                2 => FontStyle::Oblique,
+                _ => unreachable!(),
+              },
+            ));
+          });
         let mut name = SkiaString {
           ptr: ptr::null_mut(),
           length: 0,
           sk_string: ptr::null_mut(),
         };
-        ffi::skiac_font_collection_get_family(self.0, i, &mut name);
+        ffi::skiac_font_collection_get_family(
+          self.0,
+          i,
+          &mut name,
+          Box::into_raw(Box::new(on_get_style)) as *mut c_void,
+          Some(skiac_on_get_style),
+        );
         let c_str: &CStr = CStr::from_ptr(name.ptr);
-        names.push(c_str.to_string_lossy().into_owned());
+        names.push(FontStyleSet {
+          family: c_str.to_string_lossy().into_owned(),
+          styles: styles
+            .into_iter()
+            .map(|item| FontStyles {
+              width: item.0.as_str().to_owned(),
+              weight: item.1,
+              style: item.2.as_str().to_owned(),
+            })
+            .collect::<Vec<FontStyles>>(),
+        });
       }
     }
     names
@@ -2897,9 +2934,18 @@ impl FontCollection {
   }
 
   #[inline]
-  pub fn register_from_path(&self, font_path: &str) -> bool {
+  pub fn register_from_path(&self, font_path: &str, maybe_name_alias: Option<&str>) -> bool {
     if let Ok(fp) = CString::new(font_path) {
-      unsafe { ffi::skiac_font_collection_register_from_path(self.0, fp.as_ptr()) > 0 }
+      let name_alias_ptr = match maybe_name_alias {
+        Some(name) => match CString::new(name) {
+          Ok(cstring) => cstring.into_raw(),
+          Err(_) => ptr::null_mut(),
+        },
+        None => ptr::null_mut(),
+      };
+      unsafe {
+        ffi::skiac_font_collection_register_from_path(self.0, fp.as_ptr(), name_alias_ptr) > 0
+      }
     } else {
       false
     }
@@ -2913,6 +2959,19 @@ impl Drop for FontCollection {
   }
 }
 
+#[derive(Debug, Serialize)]
+pub struct FontStyles {
+  weight: i32,
+  width: String,
+  style: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct FontStyleSet {
+  pub family: String,
+  pub styles: Vec<FontStyles>,
+}
+
 #[inline(always)]
 fn radians_to_degrees(rad: f32) -> f32 {
   (rad / PI) * 180.0
@@ -2921,4 +2980,9 @@ fn radians_to_degrees(rad: f32) -> f32 {
 #[inline(always)]
 fn almost_equal(floata: f32, floatb: f32) -> bool {
   (floata - floatb).abs() < 0.00001
+}
+
+unsafe extern "C" fn skiac_on_get_style(width: i32, weight: i32, slant: i32, raw_cb: *mut c_void) {
+  let cb = Box::leak(Box::from_raw(raw_cb as *mut Box<dyn FnMut(i32, i32, i32)>));
+  cb(width, weight, slant);
 }
