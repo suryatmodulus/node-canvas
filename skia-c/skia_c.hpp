@@ -30,6 +30,7 @@
 #include <modules/skparagraph/include/TypefaceFontProvider.h>
 #include <modules/svg/include/SkSVGDOM.h>
 #include <modules/svg/include/SkSVGSVG.h>
+#include <modules/svg/include/SkSVGNode.h>
 #include <modules/svg/include/SkSVGRenderContext.h>
 #include <src/ports/SkFontMgr_custom.h>
 #include <src/core/SkFontDescriptor.h>
@@ -374,6 +375,9 @@ extern "C"
   // SkDynamicMemoryWStream
   void skiac_sk_w_stream_get(skiac_w_memory_stream *c_w_memory_stream, skiac_sk_data *sk_data, int width, int height);
   void skiac_sk_w_stream_destroy(skiac_w_memory_stream *c_w_memory_stream);
+
+  // SkSVG
+  void skiac_svg_text_to_path(const uint8_t *data, size_t length, skiac_sk_data *output_data);
 }
 
 #endif // SKIA_CAPI_H

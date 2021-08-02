@@ -1268,4 +1268,21 @@ extern "C"
   {
     delete reinterpret_cast<SkDynamicMemoryWStream *>(c_w_memory_stream);
   }
+
+  // SkSVG
+  void skiac_svg_text_to_path(const uint8_t *data, size_t length, skiac_sk_data *output_data)
+  {
+    auto svg_stream = new SkMemoryStream(data, length, false);
+    auto w_stream = new SkDynamicMemoryWStream();
+    auto svg_dom = SkSVGDOM::MakeFromStream(*svg_stream);
+    auto svg_root = svg_dom->getRoot();
+    auto svg_container_size = svg_root->intrinsicSize(SkSVGLengthContext(SkSize::Make(0, 0)));
+    auto canvas = SkSVGCanvas::Make(SkRect::MakeSize(svg_container_size), w_stream, 1).release();
+    svg_dom->render(canvas);
+    delete canvas;
+    auto d = w_stream->detachAsData().release();
+    output_data->data = reinterpret_cast<skiac_data *>(d);
+    output_data->size = d->size();
+    output_data->ptr = d->bytes();
+  }
 }
