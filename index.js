@@ -203,7 +203,7 @@ if (!process.env.DISABLE_SYSTEM_FONTS_LOAD) {
 }
 
 function convertSVGTextToPath(input) {
-  return _convertSVGTextToPath(Buffer.from(input))
+  return _convertSVGTextToPath(Buffer.from(input), GlobalFontsSingleton)
 }
 
 module.exports = {

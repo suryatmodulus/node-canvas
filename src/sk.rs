@@ -686,7 +686,12 @@ mod ffi {
     pub fn skiac_sk_w_stream_destroy(c_w_memory_stream: *mut skiac_w_memory_stream);
 
     // SkSVG
-    pub fn skiac_svg_text_to_path(data: *const u8, length: usize, output_data: *mut skiac_sk_data);
+    pub fn skiac_svg_text_to_path(
+      data: *const u8,
+      length: usize,
+      font_collection: *mut skiac_font_collection,
+      output_data: *mut skiac_sk_data,
+    );
   }
 }
 
@@ -3167,14 +3172,14 @@ fn almost_equal(floata: f32, floatb: f32) -> bool {
 }
 
 #[inline(always)]
-pub fn sk_svg_text_to_path(svg: &[u8]) -> Option<SkiaDataRef> {
+pub fn sk_svg_text_to_path(svg: &[u8], fc: &FontCollection) -> Option<SkiaDataRef> {
   let mut output_data = ffi::skiac_sk_data {
     ptr: ptr::null_mut(),
     data: ptr::null_mut(),
     size: 0,
   };
   unsafe {
-    ffi::skiac_svg_text_to_path(svg.as_ptr(), svg.len(), &mut output_data);
+    ffi::skiac_svg_text_to_path(svg.as_ptr(), svg.len(), fc.0, &mut output_data);
   };
   if output_data.ptr.is_null() {
     return None;

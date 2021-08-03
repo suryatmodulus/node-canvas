@@ -11,12 +11,14 @@
 #include <include/core/SkBitmap.h>
 #include <include/core/SkCanvas.h>
 #include <include/core/SkData.h>
+#include <include/core/SkDrawable.h>
 #include <include/core/SkGraphics.h>
 #include <include/core/SkPaint.h>
 #include <include/core/SkPathEffect.h>
 #include <include/core/SkSurface.h>
 #include <include/core/SkMaskFilter.h>
 #include <include/core/SkStream.h>
+#include <include/core/SkPictureRecorder.h>
 #include <include/core/SkStrokeRec.h>
 #include <include/effects/SkDashPathEffect.h>
 #include <include/effects/SkTrimPathEffect.h>
@@ -34,6 +36,7 @@
 #include <modules/svg/include/SkSVGRenderContext.h>
 #include <src/ports/SkFontMgr_custom.h>
 #include <src/core/SkFontDescriptor.h>
+#include <src/xml/SkXMLWriter.h>
 
 #include <stdint.h>
 
@@ -377,7 +380,7 @@ extern "C"
   void skiac_sk_w_stream_destroy(skiac_w_memory_stream *c_w_memory_stream);
 
   // SkSVG
-  void skiac_svg_text_to_path(const uint8_t *data, size_t length, skiac_sk_data *output_data);
+  void skiac_svg_text_to_path(const uint8_t *data, size_t length, skiac_font_collection *c_collection, skiac_sk_data *output_data);
 }
 
 #endif // SKIA_CAPI_H
